@@ -147,7 +147,7 @@ function fetchFromAPI() {
     pending++;
     const request = {
       location: new google.maps.LatLng(area.lat, area.lng),
-      radius: 3000,
+      radius: 3500,
       keyword: 'cafe coffee restaurant',
     };
 
