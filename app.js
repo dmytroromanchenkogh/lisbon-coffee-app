@@ -1,49 +1,85 @@
 let allPlaces = [];
 let selectedPlace = null;
 
-function initMap() {
-  const lisbonCenter = { lat: 38.7169, lng: -9.1399 };
+const LISBON_AREAS = [
+  { name: 'Baixa / Chiado',      lat: 38.7100, lng: -9.1395 },
+  { name: 'Alfama',              lat: 38.7133, lng: -9.1308 },
+  { name: 'Bairro Alto',         lat: 38.7115, lng: -9.1458 },
+  { name: 'Príncipe Real',       lat: 38.7155, lng: -9.1487 },
+  { name: 'Mouraria',            lat: 38.7160, lng: -9.1345 },
+  { name: 'Intendente / Anjos',  lat: 38.7220, lng: -9.1360 },
+  { name: 'Cais do Sodré',       lat: 38.7063, lng: -9.1452 },
+  { name: 'Santos / Estrela',    lat: 38.7075, lng: -9.1535 },
+  { name: 'Belém',               lat: 38.6977, lng: -9.2059 },
+  { name: 'Avenidas Novas',      lat: 38.7310, lng: -9.1490 },
+  { name: 'Parque das Nações',   lat: 38.7652, lng: -9.0949 },
+  { name: 'Campo de Ourique',    lat: 38.7132, lng: -9.1605 },
+];
 
+function initMap() {
   const map = new google.maps.Map(document.createElement('div'));
   const service = new google.maps.places.PlacesService(map);
+  const seenIds = new Set();
+  let pending = 0;
 
-  const request = {
-    location: new google.maps.LatLng(lisbonCenter.lat, lisbonCenter.lng),
-    radius: 1500,
-    type: 'cafe',
-    keyword: 'coffee shop cafe',
-  };
-
-  service.nearbySearch(request, (results, status, pagination) => {
-    if (status === google.maps.places.PlacesServiceStatus.OK) {
-      allPlaces = results;
-      if (pagination && pagination.hasNextPage) {
-        pagination.nextPage();
-      } else {
-        renderCards();
-      }
-    } else {
+  function onAllDone() {
+    if (allPlaces.length === 0) {
       document.getElementById('cards-container').innerHTML =
         '<p class="no-results">Could not load coffee shops. Please check your API key.</p>';
+    } else {
+      populateAreaFilter();
+      renderCards();
     }
-  });
+  }
 
-  // Accumulate paginated results
-  const originalNearbySearch = service.nearbySearch.bind(service);
-  service.nearbySearch = (req, cb) => {
-    const wrappedCb = (results, status, pag) => {
+  function searchArea(area) {
+    pending++;
+    const request = {
+      location: new google.maps.LatLng(area.lat, area.lng),
+      radius: 900,
+      type: 'cafe',
+      keyword: 'coffee',
+    };
+
+    function handlePage(results, status, pagination) {
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        allPlaces = [...allPlaces, ...results];
-        if (pag && pag.hasNextPage) {
-          setTimeout(() => pag.nextPage(), 300);
-        } else {
-          renderCards();
+        results.forEach(p => {
+          if (!seenIds.has(p.place_id)) {
+            seenIds.add(p.place_id);
+            p._area = area.name;
+            allPlaces.push(p);
+          }
+        });
+        if (pagination && pagination.hasNextPage) {
+          setTimeout(() => pagination.nextPage(), 300);
+          return;
         }
       }
-      cb(results, status, pag);
-    };
-    originalNearbySearch(req, wrappedCb);
-  };
+      pending--;
+      if (pending === 0) onAllDone();
+    }
+
+    service.nearbySearch(request, handlePage);
+  }
+
+  document.getElementById('cards-container').innerHTML = `
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading coffee shops across Lisbon…</p>
+    </div>`;
+
+  LISBON_AREAS.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
+}
+
+function populateAreaFilter() {
+  const select = document.getElementById('filter-area');
+  const areas = [...new Set(allPlaces.map(p => p._area).filter(Boolean))].sort();
+  areas.forEach(area => {
+    const opt = document.createElement('option');
+    opt.value = area;
+    opt.textContent = area;
+    select.appendChild(opt);
+  });
 }
 
 function starsHTML(rating) {
@@ -66,11 +102,13 @@ function renderCards() {
   const openOnly = document.getElementById('filter-open').checked;
 
   const query = document.getElementById('filter-search').value.trim().toLowerCase();
+  const area = document.getElementById('filter-area').value;
 
   let filtered = allPlaces.filter(p => {
     if (p.rating < minRating) return false;
     if (openOnly && !p.opening_hours?.open_now) return false;
     if (query && !p.name.toLowerCase().includes(query)) return false;
+    if (area && p._area !== area) return false;
     return true;
   });
 
@@ -101,6 +139,7 @@ function renderCards() {
         <div class="card-body">
           <div class="card-name">${place.name}</div>
           <div class="card-address">${place.vicinity || ''}</div>
+          ${place._area ? `<div class="card-area">${place._area}</div>` : ''}
           <div class="card-meta">
             <span class="stars">${starsHTML(rating)}</span>
             <span class="rating-num">${rating.toFixed(1)}</span>
@@ -176,3 +215,4 @@ document.getElementById('booking-form').addEventListener('submit', e => {
 document.getElementById('filter-rating').addEventListener('change', renderCards);
 document.getElementById('filter-open').addEventListener('change', renderCards);
 document.getElementById('filter-search').addEventListener('input', renderCards);
+document.getElementById('filter-area').addEventListener('change', renderCards);

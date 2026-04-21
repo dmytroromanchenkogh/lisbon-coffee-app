@@ -121,6 +121,15 @@ main {
 .badge-open { background: #d1fae5; color: #065f46; }
 .badge-closed { background: #fee2e2; color: #991b1b; }
 
+.card-area {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #5c3d2e;
+  background: #f5ede8;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
 .card-hours { font-size: 0.82rem; color: #666; }
 
 .btn-book {
