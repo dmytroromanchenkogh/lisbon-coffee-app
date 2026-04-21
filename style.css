@@ -41,6 +41,15 @@ header {
 }
 .toggle-label { cursor: pointer; gap: 8px; }
 .toggle-label input { accent-color: #5c3d2e; width: 16px; height: 16px; cursor: pointer; }
+.search-input {
+  border: 1px solid #d0c8c0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  background: #faf8f5;
+  width: 200px;
+}
+.search-input:focus { outline: none; border-color: #5c3d2e; }
 .result-count { margin-left: auto; font-size: 0.85rem; color: #888; }
 
 /* Cards grid */

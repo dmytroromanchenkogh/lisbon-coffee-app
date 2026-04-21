@@ -65,9 +65,12 @@ function renderCards() {
   const minRating = parseFloat(document.getElementById('filter-rating').value);
   const openOnly = document.getElementById('filter-open').checked;
 
+  const query = document.getElementById('filter-search').value.trim().toLowerCase();
+
   let filtered = allPlaces.filter(p => {
     if (p.rating < minRating) return false;
     if (openOnly && !p.opening_hours?.open_now) return false;
+    if (query && !p.name.toLowerCase().includes(query)) return false;
     return true;
   });
 
@@ -172,3 +175,4 @@ document.getElementById('booking-form').addEventListener('submit', e => {
 
 document.getElementById('filter-rating').addEventListener('change', renderCards);
 document.getElementById('filter-open').addEventListener('change', renderCards);
+document.getElementById('filter-search').addEventListener('input', renderCards);
