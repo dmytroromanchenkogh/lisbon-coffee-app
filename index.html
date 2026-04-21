@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lisbon Coffee — Book a Table</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <div class="logo">☕ Lisbon Coffee</div>
+      <p class="tagline">Discover & book the best coffee shops in Lisbon city centre</p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <label>
+      Min rating:
+      <select id="filter-rating">
+        <option value="0">All</option>
+        <option value="3.5">3.5+</option>
+        <option value="4" selected>4.0+</option>
+        <option value="4.5">4.5+</option>
+      </select>
+    </label>
+    <label class="toggle-label">
+      <input type="checkbox" id="filter-open" />
+      Open now only
+    </label>
+    <span id="result-count" class="result-count"></span>
+  </div>
+
+  <main id="cards-container">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Finding coffee shops in Lisbon…</p>
+    </div>
+  </main>
+
+  <!-- Booking modal -->
+  <div id="modal-overlay" class="hidden">
+    <div class="modal">
+      <button class="modal-close" id="modal-close">✕</button>
+      <h2 id="modal-title">Book a Table</h2>
+      <p id="modal-address" class="modal-address"></p>
+      <form id="booking-form">
+        <label>Your name
+          <input type="text" id="b-name" placeholder="João Silva" required />
+        </label>
+        <label>Email
+          <input type="email" id="b-email" placeholder="joao@email.com" required />
+        </label>
+        <div class="form-row">
+          <label>Date
+            <input type="date" id="b-date" required />
+          </label>
+          <label>Time
+            <input type="time" id="b-time" value="10:00" required />
+          </label>
+        </div>
+        <label>Guests
+          <select id="b-guests">
+            <option>1</option><option selected>2</option><option>3</option>
+            <option>4</option><option>5</option><option>6+</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-book">Confirm Booking</button>
+      </form>
+      <div id="booking-success" class="hidden success-msg">
+        <div class="checkmark">✓</div>
+        <h3>Booking Confirmed!</h3>
+        <p id="success-detail"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAaaMV0zkNISUGjQ_-WWC7GTf-yvTHwpNc&libraries=places&callback=initMap"
+    async defer>
+  </script>
+</body>
+</html>
