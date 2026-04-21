@@ -27,6 +27,7 @@ const LISBON_AREAS = [
   { name: 'Avenidas Novas',      lat: 38.7310, lng: -9.1490 },
   { name: 'Parque das Nações',   lat: 38.7652, lng: -9.0949 },
   { name: 'Campo de Ourique',    lat: 38.7132, lng: -9.1605 },
+  { name: 'Alcântara',           lat: 38.7047, lng: -9.1676 },
 ];
 
 // ── Normalize place objects into a flat shape ──
