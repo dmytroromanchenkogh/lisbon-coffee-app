@@ -38,6 +38,7 @@ function fromAPI(p) {
     rating: p.rating || 0,
     user_ratings_total: p.user_ratings_total || 0,
     _area: p._area || '',
+    _type: p._type || 'cafe',
     lat: p.geometry?.location?.lat() || 0,
     lng: p.geometry?.location?.lng() || 0,
     photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 600, maxHeight: 300 }) || null,
@@ -54,6 +55,7 @@ function fromDB(row) {
     rating: row.rating || 0,
     user_ratings_total: row.user_ratings_total || 0,
     _area: row.area || '',
+    _type: row.place_type || 'cafe',
     lat: row.lat || 0,
     lng: row.lng || 0,
     photoUrl: row.photo_url || null,
@@ -134,14 +136,19 @@ function fetchFromAPI() {
     saveToDatabase(normalized);
   }
 
-  function searchArea(area) {
+  const SEARCH_TYPES = [
+    { type: 'cafe',       keyword: 'coffee', placeType: 'cafe' },
+    { type: 'restaurant', keyword: '',       placeType: 'restaurant' },
+  ];
+
+  function searchArea(area, searchType) {
     pending++;
     const request = {
       location: new google.maps.LatLng(area.lat, area.lng),
       radius: 900,
-      type: 'cafe',
-      keyword: 'coffee',
+      type: searchType.type,
     };
+    if (searchType.keyword) request.keyword = searchType.keyword;
 
     function handlePage(results, status, pagination) {
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
@@ -149,6 +156,7 @@ function fetchFromAPI() {
           if (!seenIds.has(p.place_id)) {
             seenIds.add(p.place_id);
             p._area = area.name;
+            p._type = searchType.placeType;
             raw.push(p);
           }
         });
@@ -164,7 +172,13 @@ function fetchFromAPI() {
     service.nearbySearch(request, handlePage);
   }
 
-  LISBON_AREAS.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
+  let delay = 0;
+  LISBON_AREAS.forEach(area => {
+    SEARCH_TYPES.forEach(searchType => {
+      setTimeout(() => searchArea(area, searchType), delay);
+      delay += 200;
+    });
+  });
 }
 
 // ── 3. Save to Supabase ──
@@ -176,6 +190,7 @@ async function saveToDatabase(normalized) {
     rating: p.rating,
     user_ratings_total: p.user_ratings_total,
     area: p._area,
+    place_type: p._type,
     lat: p.lat,
     lng: p.lng,
     photo_url: p.photoUrl,
@@ -315,11 +330,14 @@ function renderCards() {
   const query = document.getElementById('filter-search').value.trim().toLowerCase();
   const area = document.getElementById('filter-area').value;
 
+  const typeFilter = document.getElementById('filter-type').value;
+
   let filtered = allPlaces.filter(p => {
     if (p.rating < minRating) return false;
     if (openOnly && p.openNow !== true) return false;
     if (query && !p.name.toLowerCase().includes(query)) return false;
     if (area && p._area !== area) return false;
+    if (typeFilter && p._type !== typeFilter) return false;
     return true;
   });
 
@@ -489,7 +507,7 @@ document.getElementById('booking-form').addEventListener('submit', async e => {
 });
 
 // ── Filter listeners ──
-['filter-rating', 'filter-area'].forEach(id =>
+['filter-rating', 'filter-area', 'filter-type'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderCards));
 ['filter-open', 'filter-distance'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderCards));
