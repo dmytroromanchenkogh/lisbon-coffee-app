@@ -11,7 +11,7 @@
   <header>
     <div class="header-inner">
       <div class="logo">☕ Lisbon Coffee</div>
-      <p class="tagline">Discover & book the best coffee shops in Lisbon city centre</p>
+      <p class="tagline">Discover & book the best coffee shops in Lisbon</p>
     </div>
   </header>
 
@@ -36,15 +36,40 @@
       <input type="checkbox" id="filter-open" />
       Open now only
     </label>
+    <label class="toggle-label">
+      <input type="checkbox" id="filter-distance" />
+      Sort by distance
+    </label>
     <span id="result-count" class="result-count"></span>
   </div>
 
-  <main id="cards-container">
-    <div class="loading">
-      <div class="spinner"></div>
-      <p>Finding coffee shops in Lisbon…</p>
+  <!-- Mobile view toggle -->
+  <div class="mobile-toggle">
+    <button id="toggle-list" class="active">☰ List</button>
+    <button id="toggle-map">🗺 Map</button>
+  </div>
+
+  <div class="app-body">
+
+    <!-- Left: scrollable card list -->
+    <div class="list-pane" id="list-pane">
+      <div id="cards-container">
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Loading coffee shops across Lisbon…</p>
+        </div>
+      </div>
     </div>
-  </main>
+
+    <!-- Right: sticky map -->
+    <div class="map-pane" id="map-pane">
+      <div id="map"></div>
+      <button id="near-me-btn" title="Find nearest coffee shops">
+        📍 Near me
+      </button>
+    </div>
+
+  </div>
 
   <!-- Booking modal -->
   <div id="modal-overlay" class="hidden">
