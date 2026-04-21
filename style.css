@@ -14,12 +14,44 @@ body {
 header {
   background: linear-gradient(135deg, #2c1810 0%, #5c3d2e 100%);
   color: #fff;
-  padding: 20px 24px;
-  text-align: center;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 16px;
+}
+.header-inner { text-align: left; }
+.logo { font-size: 1.5rem; font-weight: 700; }
+.tagline { margin-top: 2px; opacity: 0.75; font-size: 0.82rem; }
+
+#refresh-btn {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
   flex-shrink: 0;
 }
-.logo { font-size: 1.6rem; font-weight: 700; }
-.tagline { margin-top: 4px; opacity: 0.75; font-size: 0.85rem; }
+#refresh-btn:hover { background: rgba(255,255,255,0.25); }
+#refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Data source banner ── */
+.data-banner {
+  font-size: 0.8rem;
+  padding: 8px 16px;
+  margin: 8px 16px 0;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.banner-cache { background: #fef9c3; color: #854d0e; }
+.banner-live  { background: #dcfce7; color: #166534; }
+.banner-info  { background: #dbeafe; color: #1e40af; }
 
 /* ── Filters ── */
 .filters {

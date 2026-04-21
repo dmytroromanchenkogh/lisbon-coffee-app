@@ -1,3 +1,9 @@
+// ── Supabase ──
+const SUPABASE_URL = 'https://mbflfmgwhlytcpkrooww.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_UlZ7_KXAiIJ3i7i2ln3vhA_COsIP6VR';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── State ──
 let allPlaces = [];
 let selectedPlace = null;
 let map = null;
@@ -23,7 +29,40 @@ const LISBON_AREAS = [
   { name: 'Campo de Ourique',    lat: 38.7132, lng: -9.1605 },
 ];
 
-// ── Haversine distance in km ──
+// ── Normalize place objects into a flat shape ──
+function fromAPI(p) {
+  return {
+    place_id: p.place_id,
+    name: p.name,
+    vicinity: p.vicinity || '',
+    rating: p.rating || 0,
+    user_ratings_total: p.user_ratings_total || 0,
+    _area: p._area || '',
+    lat: p.geometry?.location?.lat() || 0,
+    lng: p.geometry?.location?.lng() || 0,
+    photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 600, maxHeight: 300 }) || null,
+    openNow: p.opening_hours?.open_now ?? null,
+    hoursText: p.opening_hours?.weekday_text || [],
+  };
+}
+
+function fromDB(row) {
+  return {
+    place_id: row.place_id,
+    name: row.name,
+    vicinity: row.vicinity || '',
+    rating: row.rating || 0,
+    user_ratings_total: row.user_ratings_total || 0,
+    _area: row.area || '',
+    lat: row.lat || 0,
+    lng: row.lng || 0,
+    photoUrl: row.photo_url || null,
+    openNow: null,
+    hoursText: row.opening_hours_text || [],
+  };
+}
+
+// ── Haversine distance ──
 function distanceKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -37,7 +76,7 @@ function formatDistance(km) {
   return km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`;
 }
 
-// ── Map init ──
+// ── Map init (Google callback) ──
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
     center: LISBON_CENTER,
@@ -50,24 +89,49 @@ function initMap() {
     ],
   });
 
-  loadAllPlaces();
+  loadFromDatabase();
 }
 
-function loadAllPlaces() {
+// ── 1. Load from Supabase (fast startup) ──
+async function loadFromDatabase() {
+  showBanner('');
+  const { data, error } = await db.from('places').select('*');
+
+  if (error || !data || data.length === 0) {
+    // Nothing cached yet — go straight to API
+    showBanner('No cached data found. Fetching from Google…', 'info');
+    fetchFromAPI();
+    return;
+  }
+
+  allPlaces = data.map(fromDB);
+  showBanner(`📦 Loaded ${allPlaces.length} places from database · Last synced: ${formatDate(data[0]?.updated_at)}`, 'cache');
+  populateAreaFilter();
+  placeMarkers();
+  renderCards();
+}
+
+// ── 2. Fetch from Google Places API ──
+function fetchFromAPI() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+
+  document.getElementById('cards-container').innerHTML = `
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Fetching live data from Google Places…</p>
+    </div>`;
+
   const dummy = new google.maps.Map(document.createElement('div'));
   const service = new google.maps.places.PlacesService(dummy);
+  const raw = [];
   const seenIds = new Set();
   let pending = 0;
 
   function onAllDone() {
-    if (allPlaces.length === 0) {
-      document.getElementById('cards-container').innerHTML =
-        '<p class="no-results">Could not load coffee shops. Please check your API key.</p>';
-      return;
-    }
-    populateAreaFilter();
-    placeMarkers();
-    renderCards();
+    const normalized = raw.map(fromAPI);
+    saveToDatabase(normalized);
   }
 
   function searchArea(area) {
@@ -85,7 +149,7 @@ function loadAllPlaces() {
           if (!seenIds.has(p.place_id)) {
             seenIds.add(p.place_id);
             p._area = area.name;
-            allPlaces.push(p);
+            raw.push(p);
           }
         });
         if (pagination && pagination.hasNextPage) {
@@ -103,18 +167,55 @@ function loadAllPlaces() {
   LISBON_AREAS.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
 }
 
+// ── 3. Save to Supabase ──
+async function saveToDatabase(normalized) {
+  const rows = normalized.map(p => ({
+    place_id: p.place_id,
+    name: p.name,
+    vicinity: p.vicinity,
+    rating: p.rating,
+    user_ratings_total: p.user_ratings_total,
+    area: p._area,
+    lat: p.lat,
+    lng: p.lng,
+    photo_url: p.photoUrl,
+    opening_hours_text: p.hoursText,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const BATCH = 50;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    await db.from('places').upsert(rows.slice(i, i + BATCH), { onConflict: 'place_id' });
+  }
+
+  allPlaces = normalized;
+
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = false;
+  btn.textContent = '🔄 Refresh data';
+
+  showBanner(`✅ Synced ${allPlaces.length} places from Google · Live data`, 'live');
+
+  // Reset area filter options
+  document.getElementById('filter-area').innerHTML = '<option value="">All areas</option>';
+  populateAreaFilter();
+  placeMarkers();
+  renderCards();
+}
+
 // ── Markers ──
 function placeMarkers() {
-  // Clear old markers
   Object.values(markers).forEach(m => m.setMap(null));
   markers = {};
 
   allPlaces.forEach(place => {
-    if (!place.geometry?.location) return;
+    if (!place.lat || !place.lng) return;
+
+    const position = new google.maps.LatLng(place.lat, place.lng);
 
     const marker = new google.maps.Marker({
       map,
-      position: place.geometry.location,
+      position,
       title: place.name,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
@@ -126,18 +227,21 @@ function placeMarkers() {
       },
     });
 
+    const openLabel = place.openNow === true
+      ? '<span style="color:#059669;font-weight:600">Open now</span>'
+      : place.openNow === false
+        ? '<span style="color:#dc2626;font-weight:600">Closed</span>'
+        : '';
+
     const infoWindow = new google.maps.InfoWindow({
       content: `
         <div style="font-family:sans-serif;max-width:200px;padding:4px">
           <strong style="font-size:0.9rem">${place.name}</strong><br/>
-          <span style="font-size:0.78rem;color:#888">${place.vicinity || ''}</span><br/>
+          <span style="font-size:0.78rem;color:#888">${place.vicinity}</span><br/>
           <span style="color:#f59e0b">★</span>
-          <span style="font-size:0.82rem;font-weight:600">${place.rating?.toFixed(1) || '–'}</span>
-          <span style="font-size:0.75rem;color:#aaa">(${place.user_ratings_total || 0})</span>
-          <br/>
-          <span style="font-size:0.75rem;font-weight:600;color:${place.opening_hours?.open_now ? '#059669' : '#dc2626'}">
-            ${place.opening_hours?.open_now ? 'Open now' : 'Closed'}
-          </span>
+          <span style="font-size:0.82rem;font-weight:600">${place.rating.toFixed(1)}</span>
+          <span style="font-size:0.75rem;color:#aaa">(${place.user_ratings_total.toLocaleString()})</span>
+          ${openLabel ? `<br/>${openLabel}` : ''}
           <br/><br/>
           <button onclick="openBooking('${place.place_id}')"
             style="background:#5c3d2e;color:#fff;border:none;border-radius:6px;
@@ -196,10 +300,10 @@ function starsHTML(rating) {
 }
 
 function getTodayHours(place) {
-  if (!place.opening_hours?.weekday_text) return null;
+  if (!place.hoursText?.length) return null;
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const today = days[new Date().getDay()];
-  const line = place.opening_hours.weekday_text.find(t => t.startsWith(today));
+  const line = place.hoursText.find(t => t.startsWith(today));
   return line ? line.replace(today + ': ', '') : null;
 }
 
@@ -212,29 +316,23 @@ function renderCards() {
   const area = document.getElementById('filter-area').value;
 
   let filtered = allPlaces.filter(p => {
-    if ((p.rating || 0) < minRating) return false;
-    if (openOnly && !p.opening_hours?.open_now) return false;
+    if (p.rating < minRating) return false;
+    if (openOnly && p.openNow !== true) return false;
     if (query && !p.name.toLowerCase().includes(query)) return false;
     if (area && p._area !== area) return false;
     return true;
   });
 
-  // Compute distances if user location known
   if (userLocation) {
     filtered.forEach(p => {
-      if (p.geometry?.location) {
-        p._dist = distanceKm(
-          userLocation.lat, userLocation.lng,
-          p.geometry.location.lat(), p.geometry.location.lng()
-        );
-      }
+      p._dist = distanceKm(userLocation.lat, userLocation.lng, p.lat, p.lng);
     });
   }
 
   if (byDistance && userLocation) {
     filtered.sort((a, b) => (a._dist || 999) - (b._dist || 999));
   } else {
-    filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    filtered.sort((a, b) => b.rating - a.rating);
   }
 
   document.getElementById('result-count').textContent =
@@ -248,30 +346,27 @@ function renderCards() {
   }
 
   container.innerHTML = filtered.map(place => {
-    const isOpen = place.opening_hours?.open_now;
-    const photo = place.photos?.[0]?.getUrl({ maxWidth: 600, maxHeight: 300 });
     const hours = getTodayHours(place);
-    const rating = place.rating || 0;
-    const reviews = place.user_ratings_total || 0;
-    const lat = place.geometry?.location?.lat();
-    const lng = place.geometry?.location?.lng();
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
+    const openBadge = place.openNow === true
+      ? '<span class="badge badge-open">Open now</span>'
+      : place.openNow === false
+        ? '<span class="badge badge-closed">Closed</span>'
+        : '';
 
     return `
       <div class="card" id="card-${place.place_id}" onclick="focusMarker('${place.place_id}')">
-        ${photo
-          ? `<img class="card-photo" src="${photo}" alt="${place.name}" loading="lazy" />`
+        ${place.photoUrl
+          ? `<img class="card-photo" src="${place.photoUrl}" alt="${place.name}" loading="lazy" />`
           : `<div class="card-photo-placeholder">☕</div>`}
         <div class="card-body">
           <div class="card-name">${place.name}</div>
-          <div class="card-address">${place.vicinity || ''}</div>
+          <div class="card-address">${place.vicinity}</div>
           <div class="card-meta">
-            <span class="stars">${starsHTML(rating)}</span>
-            <span class="rating-num">${rating.toFixed(1)}</span>
-            <span class="review-count">(${reviews.toLocaleString()})</span>
-            <span class="badge ${isOpen ? 'badge-open' : 'badge-closed'}">
-              ${isOpen ? 'Open now' : 'Closed'}
-            </span>
+            <span class="stars">${starsHTML(place.rating)}</span>
+            <span class="rating-num">${place.rating.toFixed(1)}</span>
+            <span class="review-count">(${place.user_ratings_total.toLocaleString()})</span>
+            ${openBadge}
           </div>
           ${place._area ? `<div class="card-area">${place._area}</div>` : ''}
           ${hours ? `<div class="card-hours">Today: ${hours}</div>` : ''}
@@ -281,29 +376,36 @@ function renderCards() {
               Book a Table
             </button>
             <a class="btn-directions" href="${mapsUrl}" target="_blank"
-               onclick="event.stopPropagation()" title="Get directions">
-              🗺
-            </a>
+               onclick="event.stopPropagation()" title="Get directions">🗺</a>
           </div>
         </div>
       </div>`;
   }).join('');
 }
 
+// ── Banner ──
+function showBanner(msg, type = '') {
+  const el = document.getElementById('data-source-banner');
+  if (!msg) { el.classList.add('hidden'); return; }
+  el.textContent = msg;
+  el.className = `data-banner banner-${type}`;
+}
+
+function formatDate(iso) {
+  if (!iso) return 'unknown';
+  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 // ── Near me ──
 document.getElementById('near-me-btn').addEventListener('click', () => {
   const btn = document.getElementById('near-me-btn');
-  if (!navigator.geolocation) {
-    alert('Geolocation is not supported by your browser.');
-    return;
-  }
+  if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
   btn.textContent = '⏳ Locating…';
   btn.classList.add('locating');
 
   navigator.geolocation.getCurrentPosition(pos => {
     userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
 
-    // Drop user pin
     if (userMarker) userMarker.setMap(null);
     userMarker = new google.maps.Marker({
       map,
@@ -322,7 +424,6 @@ document.getElementById('near-me-btn').addEventListener('click', () => {
 
     map.panTo(userLocation);
     map.setZoom(15);
-
     document.getElementById('filter-distance').checked = true;
     btn.textContent = '📍 Near me';
     btn.classList.remove('locating');
@@ -334,13 +435,16 @@ document.getElementById('near-me-btn').addEventListener('click', () => {
   });
 });
 
+// ── Refresh button ──
+document.getElementById('refresh-btn').addEventListener('click', fetchFromAPI);
+
 // ── Booking modal ──
 function openBooking(placeId) {
   selectedPlace = allPlaces.find(p => p.place_id === placeId);
   if (!selectedPlace) return;
 
   document.getElementById('modal-title').textContent = selectedPlace.name;
-  document.getElementById('modal-address').textContent = selectedPlace.vicinity || '';
+  document.getElementById('modal-address').textContent = selectedPlace.vicinity;
   document.getElementById('booking-form').classList.remove('hidden');
   document.getElementById('booking-success').classList.add('hidden');
 
@@ -363,29 +467,28 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
 });
 
-document.getElementById('booking-form').addEventListener('submit', e => {
+document.getElementById('booking-form').addEventListener('submit', async e => {
   e.preventDefault();
   const booking = {
-    place: selectedPlace.name,
-    address: selectedPlace.vicinity,
-    name: document.getElementById('b-name').value,
+    place_id: selectedPlace.place_id,
+    place_name: selectedPlace.name,
+    place_address: selectedPlace.vicinity,
+    guest_name: document.getElementById('b-name').value,
     email: document.getElementById('b-email').value,
     date: document.getElementById('b-date').value,
     time: document.getElementById('b-time').value,
     guests: document.getElementById('b-guests').value,
-    bookedAt: new Date().toISOString(),
   };
-  const bookings = JSON.parse(localStorage.getItem('lisbonCoffeeBookings') || '[]');
-  bookings.push(booking);
-  localStorage.setItem('lisbonCoffeeBookings', JSON.stringify(bookings));
+
+  await db.from('bookings').insert(booking);
 
   document.getElementById('booking-form').classList.add('hidden');
   document.getElementById('success-detail').textContent =
-    `${booking.name}, your table for ${booking.guests} at ${booking.place} on ${booking.date} at ${booking.time} is confirmed!`;
+    `${booking.guest_name}, your table for ${booking.guests} at ${booking.place_name} on ${booking.date} at ${booking.time} is confirmed!`;
   document.getElementById('booking-success').classList.remove('hidden');
 });
 
-// ── Filters ──
+// ── Filter listeners ──
 ['filter-rating', 'filter-area'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderCards));
 ['filter-open', 'filter-distance'].forEach(id =>
@@ -404,6 +507,5 @@ document.getElementById('toggle-map').addEventListener('click', () => {
   document.getElementById('list-pane').classList.add('hidden-mobile');
   document.getElementById('toggle-map').classList.add('active');
   document.getElementById('toggle-list').classList.remove('active');
-  // Trigger resize so map renders correctly after being hidden
   setTimeout(() => google.maps.event.trigger(map, 'resize'), 100);
 });
