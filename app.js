@@ -146,7 +146,7 @@ function fetchFromAPI() {
     pending++;
     const request = {
       location: new google.maps.LatLng(area.lat, area.lng),
-      radius: 900,
+      radius: 3000,
       type: searchType.type,
     };
     if (searchType.keyword) request.keyword = searchType.keyword;
