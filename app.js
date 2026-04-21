@@ -22,12 +22,12 @@ const LISBON_AREAS = [
   { name: 'Mouraria',            lat: 38.7160, lng: -9.1345 },
   { name: 'Intendente / Anjos',  lat: 38.7220, lng: -9.1360 },
   { name: 'Cais do Sodré',       lat: 38.7063, lng: -9.1452 },
+  { name: 'Alcântara',           lat: 38.7047, lng: -9.1676 },
   { name: 'Santos / Estrela',    lat: 38.7075, lng: -9.1535 },
   { name: 'Belém',               lat: 38.6977, lng: -9.2059 },
   { name: 'Avenidas Novas',      lat: 38.7310, lng: -9.1490 },
   { name: 'Parque das Nações',   lat: 38.7652, lng: -9.0949 },
   { name: 'Campo de Ourique',    lat: 38.7132, lng: -9.1605 },
-  { name: 'Alcântara',           lat: 38.7047, lng: -9.1676 },
 ];
 
 // ── Normalize place objects into a flat shape ──
@@ -148,7 +148,7 @@ function fetchFromAPI() {
     const request = {
       location: new google.maps.LatLng(area.lat, area.lng),
       radius: 3500,
-      keyword: 'cafe coffee restaurant',
+      type: 'food',
     };
 
     function handlePage(results, status, pagination) {
