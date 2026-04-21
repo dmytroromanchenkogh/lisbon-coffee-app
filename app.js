@@ -137,27 +137,29 @@ function fetchFromAPI() {
     saveToDatabase(normalized);
   }
 
-  const SEARCH_TYPES = [
-    { type: 'cafe',       keyword: 'coffee', placeType: 'cafe' },
-    { type: 'restaurant', keyword: '',       placeType: 'restaurant' },
-  ];
+  function classifyType(types = []) {
+    if (types.includes('cafe') || types.includes('bakery')) return 'cafe';
+    if (types.includes('restaurant') || types.includes('bar') || types.includes('meal_takeaway')) return 'restaurant';
+    return null;
+  }
 
-  function searchArea(area, searchType) {
+  function searchArea(area) {
     pending++;
     const request = {
       location: new google.maps.LatLng(area.lat, area.lng),
       radius: 3000,
-      type: searchType.type,
+      keyword: 'cafe coffee restaurant',
     };
-    if (searchType.keyword) request.keyword = searchType.keyword;
 
     function handlePage(results, status, pagination) {
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
         results.forEach(p => {
+          const placeType = classifyType(p.types);
+          if (!placeType) return;
           if (!seenIds.has(p.place_id)) {
             seenIds.add(p.place_id);
             p._area = area.name;
-            p._type = searchType.placeType;
+            p._type = placeType;
             raw.push(p);
           }
         });
@@ -173,13 +175,7 @@ function fetchFromAPI() {
     service.nearbySearch(request, handlePage);
   }
 
-  let delay = 0;
-  LISBON_AREAS.forEach(area => {
-    SEARCH_TYPES.forEach(searchType => {
-      setTimeout(() => searchArea(area, searchType), delay);
-      delay += 200;
-    });
-  });
+  LISBON_AREAS.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
 }
 
 // ── 3. Save to Supabase ──
