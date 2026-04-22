@@ -13,9 +13,10 @@
       <div class="logo">☕ Lisbon Coffee</div>
       <p class="tagline">Discover & book the best coffee shops in Lisbon</p>
     </div>
-    <button id="refresh-btn" title="Re-fetch all coffee shops from Google">
-      🔄 Refresh data
-    </button>
+    <div class="header-actions">
+      <button id="near-me-btn" title="Find nearest places">📍 Near me</button>
+      <button id="refresh-btn" title="Re-fetch from Google">🔄 Refresh data</button>
+    </div>
   </header>
 
   <div class="filters">
@@ -54,34 +55,17 @@
     <span id="result-count" class="result-count"></span>
   </div>
 
-  <!-- Mobile view toggle -->
-  <div class="mobile-toggle">
-    <button id="toggle-list" class="active">☰ List</button>
-    <button id="toggle-map">🗺 Map</button>
-  </div>
+  <div id="data-source-banner" class="data-banner hidden"></div>
 
-  <div class="app-body">
-
-    <!-- Left: scrollable card list -->
-    <div class="list-pane" id="list-pane">
-      <div id="data-source-banner" class="data-banner hidden"></div>
-      <div id="cards-container">
-        <div class="loading">
-          <div class="spinner"></div>
-          <p>Loading coffee shops…</p>
-        </div>
-      </div>
+  <main id="cards-container">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Loading places…</p>
     </div>
+  </main>
 
-    <!-- Right: sticky map -->
-    <div class="map-pane" id="map-pane">
-      <div id="map"></div>
-      <button id="near-me-btn" title="Find nearest coffee shops">
-        📍 Near me
-      </button>
-    </div>
-
-  </div>
+  <!-- Hidden map div — needed for Google Places API only -->
+  <div id="map" style="display:none"></div>
 
   <!-- Booking modal -->
   <div id="modal-overlay" class="hidden">
