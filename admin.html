@@ -83,6 +83,23 @@
           </div>
         </div>
 
+        <div class="field">
+          <label>Custom search locations</label>
+          <p class="hint">Add any address as an extra search centre — useful for specific neighbourhoods or streets not covered by the preset areas.</p>
+          <div class="geocode-row">
+            <input type="text" id="geocode-input" placeholder="e.g. Alcântara, Lisboa or Rua Augusta 12, Lisboa" />
+            <button type="button" id="geocode-btn" class="btn-secondary">📍 Find location</button>
+          </div>
+          <div id="geocode-result" class="geocode-result hidden">
+            <div id="geocode-preview"></div>
+            <div class="geocode-name-row">
+              <input type="text" id="geocode-name" placeholder="Label for this area" />
+              <button type="button" id="geocode-add-btn" class="btn-secondary">+ Add</button>
+            </div>
+          </div>
+          <div id="custom-areas-list" class="custom-areas-list"></div>
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn-primary">💾 Save settings</button>
           <span id="save-status" class="save-status"></span>

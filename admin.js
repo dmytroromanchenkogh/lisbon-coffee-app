@@ -19,6 +19,9 @@ const LISBON_AREAS = [
 ];
 
 let placesService = null;
+let geocoder = null;
+let pendingGeocode = null; // { lat, lng, address }
+let customAreas = [];      // [{ name, lat, lng }]
 
 // ── Google Maps callback ──
 function adminMapReady() {
@@ -26,6 +29,7 @@ function adminMapReady() {
     center: { lat: 38.7169, lng: -9.1399 }, zoom: 13,
   });
   placesService = new google.maps.places.PlacesService(map);
+  geocoder = new google.maps.Geocoder();
 }
 
 // ── Init ──
@@ -71,6 +75,8 @@ async function loadSettings() {
   const pages = currentCfg.max_pages || 3;
   document.querySelector(`input[name="pages"][value="${pages}"]`).checked = true;
 
+  customAreas = currentCfg.custom_areas || [];
+  renderCustomAreas();
   updateFetchInfo();
 }
 
@@ -95,19 +101,93 @@ function updateFetchInfo() {
   const keyword  = document.getElementById('cfg-keyword').value.trim();
   const pages    = parseInt(document.querySelector('input[name="pages"]:checked')?.value || 3);
   const areas    = [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value);
-  const requests = areas.length;
-  const maxResults = requests * pages * 20;
+  const totalAreas = areas.length + customAreas.length;
+  const maxResults = totalAreas * pages * 20;
 
   document.getElementById('fetch-info').innerHTML = `
     <div class="info-box">
-      <strong>${requests}</strong> area${requests !== 1 ? 's' : ''} ×
+      <strong>${areas.length}</strong> preset + <strong>${customAreas.length}</strong> custom =
+      <strong>${totalAreas}</strong> area${totalAreas !== 1 ? 's' : ''} ×
       <strong>${pages}</strong> page${pages !== 1 ? 's' : ''} =
-      <strong>${requests * pages}</strong> API requests per fetch ·
+      <strong>${totalAreas * pages}</strong> API requests per fetch ·
       up to <strong>${maxResults}</strong> results ·
       radius <strong>${(radius/1000).toFixed(1)} km</strong>
       ${type ? `· type: <strong>${type}</strong>` : ''}
       ${keyword ? `· keyword: <strong>"${keyword}"</strong>` : ''}
     </div>`;
+}
+
+// ── Geocoding ──
+document.getElementById('geocode-btn').addEventListener('click', () => {
+  if (!geocoder) { alert('Google Maps still loading, please wait.'); return; }
+  const address = document.getElementById('geocode-input').value.trim();
+  if (!address) return;
+
+  const btn = document.getElementById('geocode-btn');
+  btn.textContent = '⏳ Searching…';
+  btn.disabled = true;
+
+  geocoder.geocode({ address }, (results, status) => {
+    btn.textContent = '📍 Find location';
+    btn.disabled = false;
+
+    if (status !== 'OK' || !results.length) {
+      alert('Could not find that address. Try being more specific.');
+      return;
+    }
+
+    const result = results[0];
+    const lat = result.geometry.location.lat();
+    const lng = result.geometry.location.lng();
+    const formatted = result.formatted_address;
+
+    pendingGeocode = { lat, lng, address: formatted };
+
+    document.getElementById('geocode-preview').innerHTML = `
+      <div class="geocode-found">
+        ✅ Found: <strong>${formatted}</strong><br/>
+        <span class="coords">lat: ${lat.toFixed(5)}, lng: ${lng.toFixed(5)}</span>
+      </div>`;
+    document.getElementById('geocode-name').value = formatted.split(',')[0];
+    document.getElementById('geocode-result').classList.remove('hidden');
+  });
+});
+
+document.getElementById('geocode-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('geocode-btn').click(); }
+});
+
+document.getElementById('geocode-add-btn').addEventListener('click', () => {
+  if (!pendingGeocode) return;
+  const name = document.getElementById('geocode-name').value.trim() || pendingGeocode.address;
+  if (customAreas.find(a => a.lat === pendingGeocode.lat && a.lng === pendingGeocode.lng)) {
+    alert('This location is already in the list.'); return;
+  }
+  customAreas.push({ name, lat: pendingGeocode.lat, lng: pendingGeocode.lng });
+  renderCustomAreas();
+  updateFetchInfo();
+  document.getElementById('geocode-input').value = '';
+  document.getElementById('geocode-result').classList.add('hidden');
+  pendingGeocode = null;
+});
+
+function renderCustomAreas() {
+  const list = document.getElementById('custom-areas-list');
+  if (!customAreas.length) { list.innerHTML = ''; return; }
+  list.innerHTML = customAreas.map((a, i) => `
+    <div class="custom-area-item">
+      <div>
+        <strong>${a.name}</strong>
+        <span class="coords">lat: ${a.lat.toFixed(5)}, lng: ${a.lng.toFixed(5)}</span>
+      </div>
+      <button type="button" class="btn-remove" onclick="removeCustomArea(${i})">✕ Remove</button>
+    </div>`).join('');
+}
+
+function removeCustomArea(i) {
+  customAreas.splice(i, 1);
+  renderCustomAreas();
+  updateFetchInfo();
 }
 
 // ── Sync range ↔ number input ──
@@ -137,11 +217,12 @@ document.getElementById('deselect-all').addEventListener('click', () => {
 document.getElementById('settings-form').addEventListener('submit', async e => {
   e.preventDefault();
   const cfg = {
-    radius:    parseInt(document.getElementById('cfg-radius').value),
-    type:      document.getElementById('cfg-type').value,
-    keyword:   document.getElementById('cfg-keyword').value.trim(),
-    max_pages: parseInt(document.querySelector('input[name="pages"]:checked').value),
-    areas:     [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value),
+    radius:       parseInt(document.getElementById('cfg-radius').value),
+    type:         document.getElementById('cfg-type').value,
+    keyword:      document.getElementById('cfg-keyword').value.trim(),
+    max_pages:    parseInt(document.querySelector('input[name="pages"]:checked').value),
+    areas:        [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value),
+    custom_areas: customAreas,
   };
 
   const status = document.getElementById('save-status');
@@ -190,11 +271,12 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
   const type     = cfg.type      || 'food';
   const keyword  = cfg.keyword   || '';
   const maxPages = cfg.max_pages || 3;
-  const enabledAreas = cfg.areas
+  const presetAreas = cfg.areas
     ? LISBON_AREAS.filter(a => cfg.areas.includes(a.name))
     : LISBON_AREAS;
+  const enabledAreas = [...presetAreas, ...(cfg.custom_areas || [])];
 
-  addLog(`Starting fetch: ${enabledAreas.length} areas, radius ${radius}m, type "${type}", max ${maxPages} pages`);
+  addLog(`Starting fetch: ${presetAreas.length} preset + ${(cfg.custom_areas||[]).length} custom areas, radius ${radius}m, type "${type}", max ${maxPages} pages`);
 
   const raw = [];
   const seenIds = new Set();
