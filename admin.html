@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Panel — Lisbon Coffee</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <header>
+    <a href="index.html" class="back-btn">← Back to app</a>
+    <div class="header-title">
+      <div class="logo">⚙️ Admin Panel</div>
+      <p class="tagline">Lisbon Coffee — configuration & database</p>
+    </div>
+  </header>
+
+  <div class="admin-body">
+
+    <!-- Stats -->
+    <section class="card">
+      <h2>📊 Database Stats</h2>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Total places</div></div>
+        <div class="stat"><div class="stat-val" id="stat-cafes">—</div><div class="stat-label">Coffee shops</div></div>
+        <div class="stat"><div class="stat-val" id="stat-restaurants">—</div><div class="stat-label">Restaurants</div></div>
+        <div class="stat"><div class="stat-val" id="stat-bookings">—</div><div class="stat-label">Bookings</div></div>
+        <div class="stat"><div class="stat-val" id="stat-synced">—</div><div class="stat-label">Last synced</div></div>
+      </div>
+    </section>
+
+    <!-- API Config -->
+    <section class="card">
+      <h2>🔧 Google API Query Settings</h2>
+      <p class="section-desc">These settings are used every time you click "Refresh data" in the app.</p>
+
+      <form id="settings-form">
+
+        <div class="field">
+          <label for="cfg-radius">Search radius (metres)</label>
+          <div class="range-row">
+            <input type="range" id="cfg-radius-range" min="500" max="50000" step="500" value="3500" />
+            <input type="number" id="cfg-radius" min="500" max="50000" step="500" value="3500" />
+          </div>
+          <p class="hint">Each area centre searches within this radius. Google max is 50,000 m.</p>
+        </div>
+
+        <div class="field">
+          <label for="cfg-type">Place type</label>
+          <select id="cfg-type">
+            <option value="food">food — all food establishments (recommended)</option>
+            <option value="cafe">cafe — coffee shops only</option>
+            <option value="restaurant">restaurant — restaurants only</option>
+            <option value="">none — no type filter</option>
+          </select>
+          <p class="hint">Google allows one type per request. Results are then classified by their Google types array.</p>
+        </div>
+
+        <div class="field">
+          <label for="cfg-keyword">Keyword (optional)</label>
+          <input type="text" id="cfg-keyword" placeholder="e.g. coffee, brunch, burger…" />
+          <p class="hint">Narrows results to places matching this keyword in name or description. Leave blank for broadest results.</p>
+        </div>
+
+        <div class="field">
+          <label>Max pages per area</label>
+          <div class="radio-row" id="cfg-pages">
+            <label><input type="radio" name="pages" value="1" /> 1 page <span class="hint-inline">(up to 20 results)</span></label>
+            <label><input type="radio" name="pages" value="2" /> 2 pages <span class="hint-inline">(up to 40 results)</span></label>
+            <label><input type="radio" name="pages" value="3" checked /> 3 pages <span class="hint-inline">(up to 60 results — Google max)</span></label>
+          </div>
+          <p class="hint">Fewer pages = fewer API calls = lower cost.</p>
+        </div>
+
+        <div class="field">
+          <label>Search areas</label>
+          <p class="hint">Uncheck areas you don't want to include in the fetch.</p>
+          <div class="areas-grid" id="areas-grid"></div>
+          <div class="area-actions">
+            <button type="button" id="select-all">Select all</button>
+            <button type="button" id="deselect-all">Deselect all</button>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">💾 Save settings</button>
+          <span id="save-status" class="save-status"></span>
+        </div>
+
+      </form>
+    </section>
+
+    <!-- Fetch now -->
+    <section class="card">
+      <h2>🔄 Fetch Data Now</h2>
+      <p class="section-desc">Manually trigger a full data fetch using the settings above.</p>
+      <div class="fetch-info" id="fetch-info"></div>
+      <button id="fetch-btn" class="btn-primary">🔄 Fetch from Google API</button>
+      <div id="fetch-log" class="fetch-log hidden"></div>
+    </section>
+
+    <!-- Danger zone -->
+    <section class="card danger-card">
+      <h2>⚠️ Danger Zone</h2>
+      <div class="danger-row">
+        <div>
+          <strong>Clear all places</strong>
+          <p>Deletes all coffee shops and restaurants from the database.</p>
+        </div>
+        <button id="clear-btn" class="btn-danger">Clear places</button>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAaaMV0zkNISUGjQ_-WWC7GTf-yvTHwpNc&libraries=places&callback=adminMapReady" async defer></script>
+  <script src="admin.js"></script>
+</body>
+</html>

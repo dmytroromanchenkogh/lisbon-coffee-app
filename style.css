@@ -39,6 +39,20 @@ header {
 .header-actions button:hover { background: rgba(255,255,255,0.25); }
 .header-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 .header-actions button.locating { opacity: 0.7; }
+.btn-admin {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.btn-admin:hover { background: rgba(255,255,255,0.25); }
 
 /* ── Filters ── */
 .filters {
@@ -88,11 +102,17 @@ header {
 /* ── Cards grid ── */
 #cards-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+}
+@media (max-width: 900px) {
+  #cards-container { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 580px) {
+  #cards-container { grid-template-columns: 1fr; }
 }
 
 /* ── Loading ── */

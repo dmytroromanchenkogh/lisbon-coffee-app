@@ -98,7 +98,7 @@ async function loadFromDatabase() {
 }
 
 // ── 2. Fetch from Google Places API ──
-function fetchFromAPI() {
+async function fetchFromAPI() {
   const btn = document.getElementById('refresh-btn');
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
@@ -108,6 +108,17 @@ function fetchFromAPI() {
       <div class="spinner"></div>
       <p>Fetching live data from Google Places…</p>
     </div>`;
+
+  // Load settings from Supabase
+  const { data: settingsData } = await db.from('settings').select('*').eq('key', 'fetch_config').single();
+  const cfg = settingsData?.value || {};
+  const radius   = cfg.radius    || 3500;
+  const type     = cfg.type      || 'food';
+  const keyword  = cfg.keyword   || '';
+  const maxPages = cfg.max_pages || 3;
+  const enabledAreas = cfg.areas
+    ? LISBON_AREAS.filter(a => cfg.areas.includes(a.name))
+    : LISBON_AREAS;
 
   const raw = [];
   const seenIds = new Set();
@@ -125,11 +136,10 @@ function fetchFromAPI() {
 
   function searchArea(area) {
     pending++;
-    const request = {
-      location: new google.maps.LatLng(area.lat, area.lng),
-      radius: 3500,
-      type: 'food',
-    };
+    let pageCount = 0;
+    const request = { location: new google.maps.LatLng(area.lat, area.lng), radius };
+    if (type)    request.type    = type;
+    if (keyword) request.keyword = keyword;
 
     function handlePage(results, status, pagination) {
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
@@ -143,7 +153,8 @@ function fetchFromAPI() {
             raw.push(p);
           }
         });
-        if (pagination && pagination.hasNextPage) {
+        pageCount++;
+        if (pagination && pagination.hasNextPage && pageCount < maxPages) {
           setTimeout(() => pagination.nextPage(), 300);
           return;
         }
@@ -155,7 +166,7 @@ function fetchFromAPI() {
     placesService.nearbySearch(request, handlePage);
   }
 
-  LISBON_AREAS.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
+  enabledAreas.forEach((area, i) => setTimeout(() => searchArea(area), i * 200));
 }
 
 // ── 3. Save to Supabase ──
