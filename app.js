@@ -116,10 +116,9 @@ async function fetchFromAPI() {
   const type     = cfg.type      || 'food';
   const keyword  = cfg.keyword   || '';
   const maxPages = cfg.max_pages || 3;
-  const presetAreas  = cfg.areas
+  const enabledAreas = cfg.areas
     ? LISBON_AREAS.filter(a => cfg.areas.includes(a.name))
     : LISBON_AREAS;
-  const enabledAreas = [...presetAreas, ...(cfg.custom_areas || [])];
 
   const raw = [];
   const seenIds = new Set();

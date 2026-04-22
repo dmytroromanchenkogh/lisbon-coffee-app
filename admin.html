@@ -21,7 +21,7 @@
     <!-- Stats -->
     <section class="card">
       <h2>📊 Database Stats</h2>
-      <div class="stats-grid" id="stats-grid">
+      <div class="stats-grid">
         <div class="stat"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Total places</div></div>
         <div class="stat"><div class="stat-val" id="stat-cafes">—</div><div class="stat-label">Coffee shops</div></div>
         <div class="stat"><div class="stat-val" id="stat-restaurants">—</div><div class="stat-label">Restaurants</div></div>
@@ -65,7 +65,7 @@
 
         <div class="field">
           <label>Max pages per area</label>
-          <div class="radio-row" id="cfg-pages">
+          <div class="radio-row">
             <label><input type="radio" name="pages" value="1" /> 1 page <span class="hint-inline">(up to 20 results)</span></label>
             <label><input type="radio" name="pages" value="2" /> 2 pages <span class="hint-inline">(up to 40 results)</span></label>
             <label><input type="radio" name="pages" value="3" checked /> 3 pages <span class="hint-inline">(up to 60 results — Google max)</span></label>
@@ -83,23 +83,6 @@
           </div>
         </div>
 
-        <div class="field">
-          <label>Custom search locations</label>
-          <p class="hint">Add any address as an extra search centre — useful for specific neighbourhoods or streets not covered by the preset areas.</p>
-          <div class="geocode-row">
-            <input type="text" id="geocode-input" placeholder="e.g. Alcântara, Lisboa or Rua Augusta 12, Lisboa" />
-            <button type="button" id="geocode-btn" class="btn-secondary">📍 Find location</button>
-          </div>
-          <div id="geocode-result" class="geocode-result hidden">
-            <div id="geocode-preview"></div>
-            <div class="geocode-name-row">
-              <input type="text" id="geocode-name" placeholder="Label for this area" />
-              <button type="button" id="geocode-add-btn" class="btn-secondary">+ Add</button>
-            </div>
-          </div>
-          <div id="custom-areas-list" class="custom-areas-list"></div>
-        </div>
-
         <div class="form-actions">
           <button type="submit" class="btn-primary">💾 Save settings</button>
           <span id="save-status" class="save-status"></span>
@@ -114,7 +97,21 @@
       <p class="section-desc">Manually trigger a full data fetch using the settings above.</p>
       <div class="fetch-info" id="fetch-info"></div>
       <button id="fetch-btn" class="btn-primary">🔄 Fetch from Google API</button>
-      <div id="fetch-log" class="fetch-log hidden"></div>
+    </section>
+
+    <!-- System Logs -->
+    <section class="card logs-card">
+      <div class="logs-header">
+        <h2>🖥 System Logs</h2>
+        <div class="logs-actions">
+          <span id="log-count" class="log-count"></span>
+          <button id="log-copy" class="btn-log-action">📋 Copy</button>
+          <button id="log-clear" class="btn-log-action">🗑 Clear</button>
+        </div>
+      </div>
+      <div id="log-window" class="log-window">
+        <div class="log-empty">No logs yet. Fetch data or save settings to see activity here.</div>
+      </div>
     </section>
 
     <!-- Danger zone -->

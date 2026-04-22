@@ -19,9 +19,6 @@ const LISBON_AREAS = [
 ];
 
 let placesService = null;
-let geocoder = null;
-let pendingGeocode = null; // { lat, lng, address }
-let customAreas = [];      // [{ name, lat, lng }]
 
 // ── Google Maps callback ──
 function adminMapReady() {
@@ -29,17 +26,83 @@ function adminMapReady() {
     center: { lat: 38.7169, lng: -9.1399 }, zoom: 13,
   });
   placesService = new google.maps.places.PlacesService(map);
-  geocoder = new google.maps.Geocoder();
+  log('INFO', 'Google Maps & Places API ready');
 }
+
+// ── Logging system ──
+const logs = [];
+
+function log(level, message, detail = null) {
+  const entry = {
+    level,
+    message,
+    detail,
+    time: new Date(),
+  };
+  logs.push(entry);
+  renderLog(entry);
+  updateLogCount();
+}
+
+function renderLog(entry) {
+  const win = document.getElementById('log-window');
+
+  // Remove empty placeholder
+  const empty = win.querySelector('.log-empty');
+  if (empty) empty.remove();
+
+  const time = entry.time.toLocaleTimeString('en-GB', { hour12: false });
+  const ms   = String(entry.time.getMilliseconds()).padStart(3, '0');
+
+  const row = document.createElement('div');
+  row.className = `log-row log-${entry.level.toLowerCase()}`;
+  row.innerHTML = `
+    <span class="log-time">${time}.${ms}</span>
+    <span class="log-level">${entry.level}</span>
+    <span class="log-msg">${entry.message}</span>
+    ${entry.detail ? `<span class="log-detail">${entry.detail}</span>` : ''}`;
+  win.appendChild(row);
+  win.scrollTop = win.scrollHeight;
+}
+
+function updateLogCount() {
+  const counts = logs.reduce((acc, l) => {
+    acc[l.level] = (acc[l.level] || 0) + 1; return acc;
+  }, {});
+  document.getElementById('log-count').textContent =
+    `${logs.length} entries · ${counts.ERROR || 0} errors · ${counts.WARN || 0} warnings`;
+}
+
+document.getElementById('log-clear').addEventListener('click', () => {
+  logs.length = 0;
+  document.getElementById('log-window').innerHTML =
+    '<div class="log-empty">Logs cleared.</div>';
+  updateLogCount();
+});
+
+document.getElementById('log-copy').addEventListener('click', () => {
+  const text = logs.map(l => {
+    const t = l.time.toISOString();
+    return `[${t}] [${l.level}] ${l.message}${l.detail ? ' — ' + l.detail : ''}`;
+  }).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('log-copy');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  });
+});
 
 // ── Init ──
 async function init() {
+  log('INFO', 'Admin panel initialised');
+  log('INFO', 'Loading stats and settings from Supabase…');
   await Promise.all([loadStats(), loadSettings()]);
   buildAreasGrid();
 }
 
 // ── Stats ──
 async function loadStats() {
+  log('INFO', 'Fetching database stats');
   const [placesRes, cafesRes, restRes, bookingsRes, syncRes] = await Promise.all([
     db.from('places').select('*', { count: 'exact', head: true }),
     db.from('places').select('*', { count: 'exact', head: true }).eq('place_type', 'cafe'),
@@ -56,12 +119,22 @@ async function loadStats() {
   document.getElementById('stat-synced').textContent = lastSync
     ? new Date(lastSync).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
     : 'Never';
+
+  log('SUCCESS', `Stats loaded`,
+    `${placesRes.count} places (${cafesRes.count} cafes, ${restRes.count} restaurants) · ${bookingsRes.count} bookings`);
 }
 
 // ── Load settings ──
 let currentCfg = {};
 async function loadSettings() {
-  const { data } = await db.from('settings').select('*').eq('key', 'fetch_config').single();
+  log('INFO', 'Loading fetch config from Supabase settings table');
+  const { data, error } = await db.from('settings').select('*').eq('key', 'fetch_config').single();
+
+  if (error && error.code !== 'PGRST116') {
+    log('ERROR', 'Failed to load settings', error.message);
+    return;
+  }
+
   currentCfg = data?.value || {
     radius: 3500, type: 'food', keyword: '', max_pages: 3,
     areas: LISBON_AREAS.map(a => a.name),
@@ -71,12 +144,15 @@ async function loadSettings() {
   document.getElementById('cfg-radius-range').value = currentCfg.radius || 3500;
   document.getElementById('cfg-type').value         = currentCfg.type ?? 'food';
   document.getElementById('cfg-keyword').value      = currentCfg.keyword || '';
-
   const pages = currentCfg.max_pages || 3;
   document.querySelector(`input[name="pages"][value="${pages}"]`).checked = true;
 
-  customAreas = currentCfg.custom_areas || [];
-  renderCustomAreas();
+  if (data) {
+    log('SUCCESS', 'Settings loaded', JSON.stringify(currentCfg));
+  } else {
+    log('WARN', 'No saved settings found — using defaults');
+  }
+
   updateFetchInfo();
 }
 
@@ -89,108 +165,32 @@ function buildAreasGrid() {
       <input type="checkbox" name="area" value="${area.name}"
         ${enabledAreas.includes(area.name) ? 'checked' : ''} />
       ${area.name}
-    </label>
-  `).join('');
+    </label>`).join('');
   grid.querySelectorAll('input').forEach(cb => cb.addEventListener('change', updateFetchInfo));
 }
 
 // ── Fetch info summary ──
 function updateFetchInfo() {
-  const radius   = parseInt(document.getElementById('cfg-radius').value);
-  const type     = document.getElementById('cfg-type').value;
-  const keyword  = document.getElementById('cfg-keyword').value.trim();
-  const pages    = parseInt(document.querySelector('input[name="pages"]:checked')?.value || 3);
-  const areas    = [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value);
-  const totalAreas = areas.length + customAreas.length;
-  const maxResults = totalAreas * pages * 20;
+  const radius  = parseInt(document.getElementById('cfg-radius').value);
+  const type    = document.getElementById('cfg-type').value;
+  const keyword = document.getElementById('cfg-keyword').value.trim();
+  const pages   = parseInt(document.querySelector('input[name="pages"]:checked')?.value || 3);
+  const areas   = [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value);
+  const maxResults = areas.length * pages * 20;
 
   document.getElementById('fetch-info').innerHTML = `
     <div class="info-box">
-      <strong>${areas.length}</strong> preset + <strong>${customAreas.length}</strong> custom =
-      <strong>${totalAreas}</strong> area${totalAreas !== 1 ? 's' : ''} ×
+      <strong>${areas.length}</strong> area${areas.length !== 1 ? 's' : ''} ×
       <strong>${pages}</strong> page${pages !== 1 ? 's' : ''} =
-      <strong>${totalAreas * pages}</strong> API requests per fetch ·
+      <strong>${areas.length * pages}</strong> API requests per fetch ·
       up to <strong>${maxResults}</strong> results ·
       radius <strong>${(radius/1000).toFixed(1)} km</strong>
-      ${type ? `· type: <strong>${type}</strong>` : ''}
+      ${type    ? `· type: <strong>${type}</strong>` : ''}
       ${keyword ? `· keyword: <strong>"${keyword}"</strong>` : ''}
     </div>`;
 }
 
-// ── Geocoding ──
-document.getElementById('geocode-btn').addEventListener('click', () => {
-  if (!geocoder) { alert('Google Maps still loading, please wait.'); return; }
-  const address = document.getElementById('geocode-input').value.trim();
-  if (!address) return;
-
-  const btn = document.getElementById('geocode-btn');
-  btn.textContent = '⏳ Searching…';
-  btn.disabled = true;
-
-  geocoder.geocode({ address }, (results, status) => {
-    btn.textContent = '📍 Find location';
-    btn.disabled = false;
-
-    if (status !== 'OK' || !results.length) {
-      alert('Could not find that address. Try being more specific.');
-      return;
-    }
-
-    const result = results[0];
-    const lat = result.geometry.location.lat();
-    const lng = result.geometry.location.lng();
-    const formatted = result.formatted_address;
-
-    pendingGeocode = { lat, lng, address: formatted };
-
-    document.getElementById('geocode-preview').innerHTML = `
-      <div class="geocode-found">
-        ✅ Found: <strong>${formatted}</strong><br/>
-        <span class="coords">lat: ${lat.toFixed(5)}, lng: ${lng.toFixed(5)}</span>
-      </div>`;
-    document.getElementById('geocode-name').value = formatted.split(',')[0];
-    document.getElementById('geocode-result').classList.remove('hidden');
-  });
-});
-
-document.getElementById('geocode-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('geocode-btn').click(); }
-});
-
-document.getElementById('geocode-add-btn').addEventListener('click', () => {
-  if (!pendingGeocode) return;
-  const name = document.getElementById('geocode-name').value.trim() || pendingGeocode.address;
-  if (customAreas.find(a => a.lat === pendingGeocode.lat && a.lng === pendingGeocode.lng)) {
-    alert('This location is already in the list.'); return;
-  }
-  customAreas.push({ name, lat: pendingGeocode.lat, lng: pendingGeocode.lng });
-  renderCustomAreas();
-  updateFetchInfo();
-  document.getElementById('geocode-input').value = '';
-  document.getElementById('geocode-result').classList.add('hidden');
-  pendingGeocode = null;
-});
-
-function renderCustomAreas() {
-  const list = document.getElementById('custom-areas-list');
-  if (!customAreas.length) { list.innerHTML = ''; return; }
-  list.innerHTML = customAreas.map((a, i) => `
-    <div class="custom-area-item">
-      <div>
-        <strong>${a.name}</strong>
-        <span class="coords">lat: ${a.lat.toFixed(5)}, lng: ${a.lng.toFixed(5)}</span>
-      </div>
-      <button type="button" class="btn-remove" onclick="removeCustomArea(${i})">✕ Remove</button>
-    </div>`).join('');
-}
-
-function removeCustomArea(i) {
-  customAreas.splice(i, 1);
-  renderCustomAreas();
-  updateFetchInfo();
-}
-
-// ── Sync range ↔ number input ──
+// ── Range ↔ number sync ──
 document.getElementById('cfg-radius-range').addEventListener('input', e => {
   document.getElementById('cfg-radius').value = e.target.value;
   updateFetchInfo();
@@ -203,7 +203,6 @@ document.getElementById('cfg-type').addEventListener('change', updateFetchInfo);
 document.getElementById('cfg-keyword').addEventListener('input', updateFetchInfo);
 document.querySelectorAll('input[name="pages"]').forEach(r => r.addEventListener('change', updateFetchInfo));
 
-// ── Select / Deselect all areas ──
 document.getElementById('select-all').addEventListener('click', () => {
   document.querySelectorAll('input[name="area"]').forEach(c => c.checked = true);
   updateFetchInfo();
@@ -217,17 +216,17 @@ document.getElementById('deselect-all').addEventListener('click', () => {
 document.getElementById('settings-form').addEventListener('submit', async e => {
   e.preventDefault();
   const cfg = {
-    radius:       parseInt(document.getElementById('cfg-radius').value),
-    type:         document.getElementById('cfg-type').value,
-    keyword:      document.getElementById('cfg-keyword').value.trim(),
-    max_pages:    parseInt(document.querySelector('input[name="pages"]:checked').value),
-    areas:        [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value),
-    custom_areas: customAreas,
+    radius:    parseInt(document.getElementById('cfg-radius').value),
+    type:      document.getElementById('cfg-type').value,
+    keyword:   document.getElementById('cfg-keyword').value.trim(),
+    max_pages: parseInt(document.querySelector('input[name="pages"]:checked').value),
+    areas:     [...document.querySelectorAll('input[name="area"]:checked')].map(c => c.value),
   };
 
   const status = document.getElementById('save-status');
   status.textContent = 'Saving…';
   status.className = 'save-status saving';
+  log('INFO', 'Saving settings to Supabase', JSON.stringify(cfg));
 
   const { error } = await db.from('settings').upsert(
     { key: 'fetch_config', value: cfg, updated_at: new Date().toISOString() },
@@ -237,50 +236,53 @@ document.getElementById('settings-form').addEventListener('submit', async e => {
   if (error) {
     status.textContent = '❌ Save failed';
     status.className = 'save-status error';
+    log('ERROR', 'Failed to save settings', error.message);
   } else {
     currentCfg = cfg;
     status.textContent = '✅ Saved!';
     status.className = 'save-status success';
     setTimeout(() => { status.textContent = ''; }, 3000);
+    log('SUCCESS', 'Settings saved successfully');
   }
 });
 
-// ── Fetch now ──
+// ── Fetch from Google API ──
 document.getElementById('fetch-btn').addEventListener('click', async () => {
   if (!placesService) {
-    alert('Google Maps still loading, please wait a moment.');
+    log('WARN', 'Google Maps not ready yet — please wait a moment');
     return;
   }
 
   const btn = document.getElementById('fetch-btn');
-  const log = document.getElementById('fetch-log');
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
-  log.classList.remove('hidden');
-  log.textContent = '';
 
-  function addLog(msg) {
-    log.textContent += msg + '\n';
-    log.scrollTop = log.scrollHeight;
+  const { data: settingsData, error: settingsError } = await db.from('settings')
+    .select('*').eq('key', 'fetch_config').single();
+
+  if (settingsError && settingsError.code !== 'PGRST116') {
+    log('ERROR', 'Failed to read settings before fetch', settingsError.message);
   }
 
-  // Read current settings
-  const { data: settingsData } = await db.from('settings').select('*').eq('key', 'fetch_config').single();
-  const cfg = settingsData?.value || {};
+  const cfg      = settingsData?.value || {};
   const radius   = cfg.radius    || 3500;
   const type     = cfg.type      || 'food';
   const keyword  = cfg.keyword   || '';
   const maxPages = cfg.max_pages || 3;
-  const presetAreas = cfg.areas
+  const enabledAreas = cfg.areas
     ? LISBON_AREAS.filter(a => cfg.areas.includes(a.name))
     : LISBON_AREAS;
-  const enabledAreas = [...presetAreas, ...(cfg.custom_areas || [])];
 
-  addLog(`Starting fetch: ${presetAreas.length} preset + ${(cfg.custom_areas||[]).length} custom areas, radius ${radius}m, type "${type}", max ${maxPages} pages`);
+  log('INFO', '─── Fetch started ───');
+  log('INFO', `Config: radius=${radius}m, type="${type}", keyword="${keyword}", maxPages=${maxPages}`);
+  log('INFO', `Areas: ${enabledAreas.map(a => a.name).join(', ')}`);
+  log('INFO', `Total requests: up to ${enabledAreas.length * maxPages}`);
 
   const raw = [];
   const seenIds = new Set();
   let pending = 0;
+  let totalReturned = 0;
+  let totalSkipped = 0;
 
   function classifyType(types = []) {
     if (types.includes('cafe') || types.includes('bakery')) return 'cafe';
@@ -289,7 +291,9 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
   }
 
   async function onAllDone() {
-    addLog(`\nFetched ${raw.length} unique places. Saving to database…`);
+    log('INFO', `─── All areas fetched ───`);
+    log('INFO', `Total returned by Google: ${totalReturned} · Skipped (no type / duplicate): ${totalSkipped} · New unique places: ${raw.length}`);
+    log('INFO', `Saving ${raw.length} places to Supabase in batches of 50…`);
 
     const rows = raw.map(p => ({
       place_id: p.place_id,
@@ -307,12 +311,19 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
     }));
 
     const BATCH = 50;
+    let saved = 0;
     for (let i = 0; i < rows.length; i += BATCH) {
-      await db.from('places').upsert(rows.slice(i, i + BATCH), { onConflict: 'place_id' });
-      addLog(`Saved batch ${Math.floor(i/BATCH)+1}/${Math.ceil(rows.length/BATCH)}`);
+      const batch = rows.slice(i, i + BATCH);
+      const { error } = await db.from('places').upsert(batch, { onConflict: 'place_id' });
+      if (error) {
+        log('ERROR', `Batch ${Math.floor(i/BATCH)+1} failed`, error.message);
+      } else {
+        saved += batch.length;
+        log('SUCCESS', `Batch ${Math.floor(i/BATCH)+1}/${Math.ceil(rows.length/BATCH)} saved`, `${saved}/${rows.length} total`);
+      }
     }
 
-    addLog(`\n✅ Done! ${rows.length} places saved.`);
+    log('SUCCESS', `─── Fetch complete: ${saved} places saved to database ───`);
     btn.disabled = false;
     btn.textContent = '🔄 Fetch from Google API';
     loadStats();
@@ -325,27 +336,47 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
     if (type)    request.type    = type;
     if (keyword) request.keyword = keyword;
 
+    log('INFO', `→ Searching "${area.name}"`, `lat:${area.lat}, lng:${area.lng}, radius:${radius}m`);
+
     function handlePage(results, status, pagination) {
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        let added = 0;
-        results.forEach(p => {
-          const placeType = classifyType(p.types);
-          if (!placeType) return;
-          if (!seenIds.has(p.place_id)) {
-            seenIds.add(p.place_id);
-            p._area = area.name;
-            p._type = placeType;
-            raw.push(p);
-            added++;
-          }
-        });
         pageCount++;
-        addLog(`  ${area.name} — page ${pageCount}: +${added} new (${results.length} returned)`);
+        let newCount = 0, skipType = 0, skipDupe = 0;
+
+        results.forEach(p => {
+          totalReturned++;
+          const placeType = classifyType(p.types);
+          if (!placeType) { skipType++; totalSkipped++; return; }
+          if (seenIds.has(p.place_id)) { skipDupe++; totalSkipped++; return; }
+          seenIds.add(p.place_id);
+          p._area = area.name;
+          p._type = placeType;
+          raw.push(p);
+          newCount++;
+        });
+
+        log(
+          newCount > 0 ? 'INFO' : 'WARN',
+          `  "${area.name}" page ${pageCount}: ${results.length} returned`,
+          `+${newCount} new · ${skipDupe} dupes · ${skipType} wrong type`
+        );
+
         if (pagination && pagination.hasNextPage && pageCount < maxPages) {
+          log('INFO', `  "${area.name}" has more results — fetching page ${pageCount + 1}`);
           setTimeout(() => pagination.nextPage(), 300);
           return;
         }
+
+        if (!pagination?.hasNextPage) {
+          log('INFO', `  "${area.name}" — no more pages`);
+        } else if (pageCount >= maxPages) {
+          log('WARN', `  "${area.name}" — stopped at page limit (${maxPages})`);
+        }
+
+      } else if (status !== google.maps.places.PlacesServiceStatus.OK) {
+        log('ERROR', `  "${area.name}" request failed`, `status: ${status}`);
       }
+
       pending--;
       if (pending === 0) onAllDone();
     }
@@ -359,11 +390,12 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
 // ── Clear database ──
 document.getElementById('clear-btn').addEventListener('click', async () => {
   if (!confirm('Are you sure? This will delete ALL places from the database.')) return;
+  log('WARN', 'Clearing all places from database…');
   const { error } = await db.from('places').delete().neq('place_id', '');
   if (error) {
-    alert('Error clearing database: ' + error.message);
+    log('ERROR', 'Failed to clear database', error.message);
   } else {
-    alert('All places deleted.');
+    log('SUCCESS', 'All places deleted from database');
     loadStats();
   }
 });
