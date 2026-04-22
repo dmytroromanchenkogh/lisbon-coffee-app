@@ -96,9 +96,118 @@ document.getElementById('log-copy').addEventListener('click', () => {
 async function init() {
   log('INFO', 'Admin panel initialised');
   log('INFO', 'Loading stats and settings from Supabase…');
-  await Promise.all([loadStats(), loadSettings()]);
+  await Promise.all([loadStats(), loadSettings(), loadDashboard()]);
   buildAreasGrid();
 }
+
+// ── Dashboard ──
+const RATING_BANDS = [
+  { label: '1.0 – 2.9', min: 1.0, max: 2.9, color: '#f87171' },
+  { label: '3.0 – 3.9', min: 3.0, max: 3.9, color: '#fbbf24' },
+  { label: '4.0 – 4.4', min: 4.0, max: 4.4, color: '#34d399' },
+  { label: '4.5 – 5.0', min: 4.5, max: 5.0, color: '#10b981' },
+];
+
+async function loadDashboard() {
+  log('INFO', 'Loading dashboard data');
+  const { data, error } = await db.from('places').select('rating, place_type');
+
+  if (error) {
+    log('ERROR', 'Failed to load dashboard data', error.message);
+    document.getElementById('dashboard-body').innerHTML =
+      '<p class="dash-error">Failed to load data.</p>';
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    document.getElementById('dashboard-body').innerHTML =
+      '<p class="dash-error">No places in database yet. Run a fetch first.</p>';
+    return;
+  }
+
+  const restaurants  = data.filter(p => p.place_type === 'restaurant');
+  const cafes        = data.filter(p => p.place_type === 'cafe');
+
+  function bandCounts(places) {
+    return RATING_BANDS.map(b => ({
+      ...b,
+      count: places.filter(p => p.rating >= b.min && p.rating <= b.max).length,
+    }));
+  }
+
+  const restBands = bandCounts(restaurants);
+  const cafeBands = bandCounts(cafes);
+  const maxCount  = Math.max(...restBands.map(b => b.count), ...cafeBands.map(b => b.count), 1);
+
+  function avgRating(places) {
+    if (!places.length) return '—';
+    return (places.reduce((s, p) => s + (p.rating || 0), 0) / places.length).toFixed(2);
+  }
+
+  function renderChart(bands, total) {
+    return bands.map(b => {
+      const pct     = total ? ((b.count / total) * 100).toFixed(1) : 0;
+      const barPct  = maxCount ? ((b.count / maxCount) * 100).toFixed(1) : 0;
+      return `
+        <div class="dash-row">
+          <div class="dash-label">${b.label}</div>
+          <div class="dash-bar-wrap">
+            <div class="dash-bar" style="width:${barPct}%;background:${b.color}">
+              ${b.count > 0 ? `<span class="dash-bar-count">${b.count}</span>` : ''}
+            </div>
+          </div>
+          <div class="dash-pct">${pct}%</div>
+        </div>`;
+    }).join('');
+  }
+
+  log('SUCCESS', 'Dashboard data loaded',
+    `${restaurants.length} restaurants, ${cafes.length} cafes`);
+
+  document.getElementById('dashboard-body').innerHTML = `
+    <div class="dash-grid">
+
+      <div class="dash-panel">
+        <div class="dash-panel-header">
+          <span class="dash-icon">🍽</span>
+          <div>
+            <div class="dash-panel-title">Restaurants</div>
+            <div class="dash-panel-sub">${restaurants.length} total · avg ⭐ ${avgRating(restaurants)}</div>
+          </div>
+        </div>
+        <div class="dash-chart">
+          <div class="dash-axis-labels">
+            ${RATING_BANDS.map(b => `<div class="dash-axis-label" style="color:${b.color}">⭐</div>`).join('')}
+          </div>
+          ${renderChart(restBands, restaurants.length)}
+        </div>
+      </div>
+
+      <div class="dash-panel">
+        <div class="dash-panel-header">
+          <span class="dash-icon">☕</span>
+          <div>
+            <div class="dash-panel-title">Coffee Shops</div>
+            <div class="dash-panel-sub">${cafes.length} total · avg ⭐ ${avgRating(cafes)}</div>
+          </div>
+        </div>
+        <div class="dash-chart">
+          ${renderChart(cafeBands, cafes.length)}
+        </div>
+      </div>
+
+    </div>
+
+    <div class="dash-legend">
+      ${RATING_BANDS.map(b => `
+        <div class="dash-legend-item">
+          <span class="dash-legend-dot" style="background:${b.color}"></span>
+          ${b.label}
+        </div>`).join('')}
+    </div>`;
+}
+
+document.getElementById('dashboard-refresh').addEventListener('click', loadDashboard);
 
 // ── Stats ──
 async function loadStats() {
